@@ -9,6 +9,10 @@
 
 // Route the incoming request based on type (LaunchRequest, IntentRequest,
 // etc.) The JSON body of the request is provided in the event parameter.
+
+
+var http = require('http');
+
 exports.handler = function (event, context) {
     try {
         console.log("event.session.application.applicationId=" + event.session.application.applicationId);
@@ -17,11 +21,9 @@ exports.handler = function (event, context) {
          * Uncomment this if statement and populate with your skill's application ID to
          * prevent someone else from configuring a skill that sends requests to this function.
          */
-        /*
-        if (event.session.application.applicationId !== "amzn1.echo-sdk-ams.app.[unique-value-here]") {
+        if (event.session.application.applicationId !== "amzn1.echo-sdk-ams.app.3a4a63de-9189-4007-986b-9171115d8991") {
              context.fail("Invalid Application ID");
          }
-        */
 
         if (event.session.new) {
             onSessionStarted({requestId: event.request.requestId}, event.session);
@@ -77,11 +79,12 @@ function onIntent(intentRequest, session, callback) {
     var intent = intentRequest.intent,
         intentName = intentRequest.intent.name;
 
+    console.log("Processing intent - " + intentName)
     // Dispatch to your skill's intent handlers
-    if ("MyColorIsIntent" === intentName) {
-        setColorInSession(intent, session, callback);
-    } else if ("WhatsMyColorIntent" === intentName) {
-        getColorFromSession(intent, session, callback);
+    if ("GetRating" === intentName) {
+        getMovieRating(intent, session, callback);
+    } else if ("getSummary" === intentName) {
+        getMovieSummary(intent, session, callback);
     } else if ("AMAZON.HelpIntent" === intentName) {
         getWelcomeResponse(callback);
     } else {
@@ -105,13 +108,12 @@ function getWelcomeResponse(callback) {
     // If we wanted to initialize the session to have some attributes we could add those here.
     var sessionAttributes = {};
     var cardTitle = "Welcome";
-    var speechOutput = "Welcome to the Alexa Skills Kit sample, " +
-            "Please tell me your favorite color by saying, " +
-            "my favorite color is red";
+    var speechOutput = "Welcome to Rotting Tomatoes! " +
+            "Which movie do you want to know more about?"
     // If the user either does not reply to the welcome message or says something that is not
     // understood, they will be prompted again with this text.
-    var repromptText = "Please tell me your favorite color by saying, " +
-            "my favorite color is red";
+    var repromptText = "Please tell me the name of the movie by saying, " +
+            "Tell me about Batman Begins or I want to know about Batman Begins.";
     var shouldEndSession = false;
 
     callback(sessionAttributes,
@@ -119,63 +121,123 @@ function getWelcomeResponse(callback) {
 }
 
 /**
- * Sets the color in the session and prepares the speech to reply to the user.
+ * Gets the rating for the given movie.
  */
-function setColorInSession(intent, session, callback) {
+function getMovieRating(intent, session, callback) {
     var cardTitle = intent.name;
-    var favoriteColorSlot = intent.slots.Color;
+    var movieNameSlot = intent.slots.MovieName;
     var repromptText = "";
     var sessionAttributes = {};
     var shouldEndSession = false;
     var speechOutput = "";
 
-    if (favoriteColorSlot) {
-        var favoriteColor = favoriteColorSlot.value;
-        sessionAttributes = createFavoriteColorAttributes(favoriteColor);
-        speechOutput = "I now know your favorite color is " + favoriteColor + ". You can ask me " +
-                "your favorite color by saying, what's my favorite color?";
-        repromptText = "You can ask me your favorite color by saying, what's my favorite color?";
+    if (movieNameSlot) {
+        var movieName = movieNameSlot.value;
+        if(session.attributes) {
+            movieRating = session.attributes.movieRating;
+        } else {
+            sessionAttributes = setMovieInfoInSession(movieName);
+            movieRating = sessionAttributes.movieRating;
+        }
+
+        console.log("Retrieving movie rating for " + movieName)
+        sessionAttributes = setMovieInfoInSession(movieName, session);
+        speechOutput = "The Rotten Tomatoes rating for the movie " + movieName + " is " + movieRating;
+        //repromptText = "You can ask me your favorite color by saying, what's my favorite color?";
     } else {
-        speechOutput = "I'm not sure what your favorite color is, please try again";
-        repromptText = "I'm not sure what your favorite color is, you can tell me your " +
-                "favorite color by saying, my favorite color is red";
+        console.log("MovieName slot was null")
+        speechOutput = "I'm not sure what movie that is.";
+        repromptText = "Please tell me the name of the movie by saying, " +
+            "Tell me about Batman Begins or I want to know about Batman Begins.";
     }
 
     callback(sessionAttributes,
              buildSpeechletResponse(cardTitle, speechOutput, repromptText, shouldEndSession));
 }
 
-function createFavoriteColorAttributes(favoriteColor) {
-    return {
-        favoriteColor: favoriteColor
-    };
-}
-
-function getColorFromSession(intent, session, callback) {
-    var favoriteColor;
-    var repromptText = null;
+/**
+ * Gets the summary for the given movie.
+ */
+function getMovieSummary(intent, session, callback) {
+    var cardTitle = intent.name;
+    var movieNameSlot = intent.slots.MovieName;
+    var repromptText = "";
     var sessionAttributes = {};
     var shouldEndSession = false;
     var speechOutput = "";
 
-    if(session.attributes) {
-        favoriteColor = session.attributes.favoriteColor;
+    if (movieNameSlot) {
+        var movieName = movieNameSlot.value;
+        console.log("Retrieving movie summary for " + movieName)
+        var movieSummary = "";
+        if(session.attributes) {
+            movieSummary = session.attributes.movieSummary;
+        } else {
+            sessionAttributes = setMovieInfoInSession(movieName);
+            movieSummary = sessionAttributes.movieSummary;
+        }
+        
+        if (movieSummary) {
+            speechOutput = "The Rotten Tomatoes summary for the movie " + movieName + " is " + movieSummary;
+            // repromptText = "You can ask me more questions";
+        } else {
+            console.log("Movie summary was null.")
+            speechOutput = "I'm not sure what the summary for that movie is.";
+            repromptText = "Please provide a valid move name";
+        }
+    } else {
+        console.log("MovieName slot was null")
+        speechOutput = "I'm not sure what movie that is.";
+        repromptText = "Please tell me the name of the movie by saying, " +
+            "Tell me about Batman Begins or I want to know about Batman Begins.";
     }
 
-    if(favoriteColor) {
-        speechOutput = "Your favorite color is " + favoriteColor + ", goodbye";
-        shouldEndSession = true;
-    }
-    else {
-        speechOutput = "I'm not sure what your favorite color is, you can say, my favorite color " +
-                " is red";
-    }
-
-    // Setting repromptText to null signifies that we do not want to reprompt the user.
-    // If the user does not respond or says something that is not understood, the session
-    // will end.
     callback(sessionAttributes,
-             buildSpeechletResponse(intent.name, speechOutput, repromptText, shouldEndSession));
+             buildSpeechletResponse(cardTitle, speechOutput, repromptText, shouldEndSession));
+}
+
+function setMovieInfoInSession(movieName, session, callback) {
+    //TODO: Make the call to the Rotten Tomatoes API here. 
+
+    // Commenting this until the Rotten Tomatoes account is activated.
+    var rottenTomatoHost = 'http://api.rottentomatoes.com';
+    var apiPath = '/api/public/v1.0/movies.json';
+    var apiKey = "4jxkk59ecyrehyr34qs7ardb";
+    var uriEncodedMovieName = encodeURIComponent(movieName);
+    var apiQuery = "?apikey="+apiKey+"&q="+uriEncodedMovieName +"&page_limit=1";
+    var option = {
+        hostname = rottenTomatoHost,
+        path = apiPath+apiQuery,
+        method = "GET"
+    };
+    
+    var req = http.request(option, function(res){
+        var body = '';
+    
+        res.on('data', function(chunk){
+            body += chunk;
+        });
+    
+        res.on('end', function(){
+            var json= JSON.parse(body);
+            console.log("Got a response from Rotten Tomato: ", json);
+            session.attributes = json;
+            callback();
+        });
+        
+    })
+    
+    req.on('error', function(e){
+          console.log("Got an error: ", e);
+    }); 
+
+    req.end();
+    
+    return {
+        movieName: movieName,
+        movieRating: "8.4",
+        movieSummary: "This is a excellent movie! Go Watch it!"
+    };
 }
 
 // --------------- Helpers that build all of the responses -----------------------
